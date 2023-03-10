@@ -60,6 +60,11 @@ class ELOModel:
             rating = self.ratings[team]
             delta = (mean - rating) * self.end_of_season_decay
             self.ratings[team] = rating + delta
+
+    def get_elo(self, team):
+        return self.ratings[team]
+
+
 def simulate_games(elo_model, games):
     for _, game in games.iterrows():
         wid, lid = game['WTeamID'], game['LTeamID']
