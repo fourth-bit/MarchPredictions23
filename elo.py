@@ -42,7 +42,8 @@ class ELOModel:
 
         K_mult = 1
         if margin_of_victory is not None:
-            K_mult *= math.log(margin_of_victory) * self.mov_mult
+            winner_diff = rating1 - rating2 if result == 1 else rating2 - rating1
+            K_mult *= (margin_of_victory + 3) ** 0.8 / (7.5 + 0.006 * winner_diff)
 
         if day_num is not None:
             K_mult *= self.K_multiplier * math.exp(-day_num * self.K_decay / 10)
