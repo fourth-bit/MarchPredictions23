@@ -50,54 +50,23 @@ def space_to_elo(space):
 def elo_objective(space):
     elo_model = space_to_elo(space)
 
-    for year in range(2004, 2013):
+    for year in range(1993, 2013):
         results = compact_results_rs[compact_results_rs['Season'] == year]
-        for _, game in results.iterrows():
-            wid, lid = game['WTeamID'], game['LTeamID']
-            mov = game['WScore'] - game['LScore']
-
-            home_court = None
-            if game['WLoc'] == 'H':
-                home_court = 1
-            elif game['WLoc'] == 'A':
-                home_court = 0
-
-            elo_model.update_rankings(wid, lid, result=1, home_team=home_court,
-                                      margin_of_victory=mov, day_num=game['DayNum'])
+        simulate_games(elo_model, results)
 
         tourny_results = compact_results_mm[compact_results_mm['Season'] == year]
-        for _, game in tourny_results.iterrows():
-            wid, lid = game['WTeamID'], game['LTeamID']
-            mov = game['WScore'] - game['LScore']
-
-            elo_model.update_rankings(wid, lid, result=1, home_team=None,
-                                      margin_of_victory=mov, day_num=game['DayNum'])
+        simulate_games(elo_model, tourny_results)
 
         elo_model.time_decay()
 
     loss = 0
-    games = 0
+    count = 0
 
     for year in range(2013, 2023):
         # Same, but everything counts for Brier Score, and no training in the tournament
 
         results = compact_results_rs[compact_results_rs['Season'] == year]
-        for _, game in results.iterrows():
-            wid, lid = game['WTeamID'], game['LTeamID']
-            mov = game['WScore'] - game['LScore']
-
-            home_court = None
-            if game['WLoc'] == 'H':
-                home_court = 1
-            elif game['WLoc'] == 'A':
-                home_court = 0
-
-            prediction = elo_model.predict_game(wid, lid, home_team=home_court)
-            # loss += (1 - prediction) ** 2
-            # games += 1
-
-            elo_model.update_rankings(wid, lid, result=1, home_team=home_court,
-                                      margin_of_victory=mov, day_num=game['DayNum'])
+        simulate_games(elo_model, results)
 
         tourny_results = compact_results_mm[compact_results_mm['Season'] == year]
         for _, game in tourny_results.iterrows():
@@ -105,13 +74,15 @@ def elo_objective(space):
 
             prediction = elo_model.predict_game(wid, lid, home_team=None)
             loss += (1 - prediction) ** 2
-            games += 1
+            count += 1
 
         elo_model.time_decay()
 
-    return {'loss': loss / games, 'status': hyperopt.STATUS_OK}
+    return {'loss': loss / count, 'status': hyperopt.STATUS_OK}
+
 
 elo_trials = Trials()
 elo_best_params = fmin(elo_objective, elo_space, algo=tpe.suggest, max_evals=100, trials=elo_trials)
-
-print(elo_best_params)
+# elo_best_params = {'K': 10.067338276694205, 'K_decay': 0.06949750095380997,
+#                    'K_multiplier': 2.9002766872973336, 'end_of_season_decay': 0.051425562928002384,
+#                    'home_court_advantage': 51.533632254163315, 'margin_of_victor_multiplier': 0.362499069221264}

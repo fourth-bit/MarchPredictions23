@@ -60,3 +60,16 @@ class ELOModel:
             rating = self.ratings[team]
             delta = (mean - rating) * self.end_of_season_decay
             self.ratings[team] = rating + delta
+def simulate_games(elo_model, games):
+    for _, game in games.iterrows():
+        wid, lid = game['WTeamID'], game['LTeamID']
+        mov = game['WScore'] - game['LScore']
+
+        home_court = None
+        if game['WLoc'] == 'H':
+            home_court = 1
+        elif game['WLoc'] == 'A':
+            home_court = 0
+
+        elo_model.update_rankings(wid, lid, result=1, home_team=home_court,
+                                  margin_of_victory=mov, day_num=game['DayNum'])
