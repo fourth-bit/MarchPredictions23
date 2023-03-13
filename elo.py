@@ -65,6 +65,20 @@ class ELOModel:
         return self.ratings[team]
 
 
+class EloModelSklearn:
+    def fit(self, X, y, **kwargs):
+        pass
+
+    def predict(self, X, **kwargs):
+        rating1 = X['S1Elo']
+        rating2 = X['S2Elo']
+        as_series = 1 / (1 + 10 ** ((rating2 - rating1) / 400))
+        return as_series.values # Turns it into a numpy array
+
+    def get_params(self, **kwargs):
+        return {}
+
+
 def simulate_games(elo_model, games):
     for _, game in games.iterrows():
         wid, lid = game['WTeamID'], game['LTeamID']

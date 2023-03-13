@@ -5,6 +5,10 @@ import numpy as np
 import hyperopt
 
 from hyperopt import hp, fmin, Trials, tpe
+from xgboost import XGBClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import StackingClassifier
+from sklearn.metrics import brier_score_loss
 
 from elo import *
 
@@ -168,19 +172,90 @@ for season in range(2003, 2024):
             entry['Outcome'] = 1
             entry['S1Elo'] = elo_model.get_elo(game['WTeamID'])
             entry['S2Elo'] = elo_model.get_elo(game['LTeamID'])
+            entry['S1Seed'] = winner_seed
+            entry['S2Seed'] = loser_seed
         else:
             # Loser gets slot 1
             for key in winner_stats:
-                entry['S2' + key] = winner_stats[key]
+                entry[f'S2{key}'] = winner_stats[key]
             for key in loser_stats:
-                entry['S1' + key] = loser_stats[key]
+                entry[f'S1{key}'] = loser_stats[key]
 
             entry['Outcome'] = 0
             entry['S2Elo'] = elo_model.get_elo(game['WTeamID'])
             entry['S1Elo'] = elo_model.get_elo(game['LTeamID'])
+            entry['S2Seed'] = winner_seed
+            entry['S1Seed'] = loser_seed
+
+        entry['EloDiff'] = entry['S1Elo'] - entry['S2Elo']
+        entry['SeedDiff'] = entry['S1Seed'] - entry['S2Seed']
 
         dataset.append(entry)
 
     elo_model.time_decay()
 
 tournament_dataset = pd.DataFrame(dataset)
+
+print('Dataset Generation Complete')
+
+X = tournament_dataset.drop('Outcome', axis=1)
+y = tournament_dataset['Outcome']
+X_train, X_test, y_train, y_test = train_test_split(X, y)
+
+# Finally, we can use XGBoost
+xgb_space = {
+    'n_estimators': hp.uniformint('n_estimators', 100, 5000),
+    'learning_rate': hp.uniform('learning_rate', 0.005, 0.2),
+    'gamma': hp.uniform('gamma', 0, 10),
+    'max_depth': hp.uniformint('max_depth', 3, 10),
+    'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
+    'min_child_weight': hp.uniformint('min_child_weight', 1, 10),
+}
+
+
+def space_to_xgb(space):
+    return XGBClassifier(subsample=0.8, seed=6, eval_metric=brier_score_loss, **space)
+
+
+def xgb_objective(space):
+    model = space_to_xgb(space)
+    model.fit(X_train, y_train)
+    y_pred = model.predict_proba(X_test)
+    loss = brier_score_loss(y_test, y_pred[:,1])
+    return {'loss': loss, 'status': hyperopt.STATUS_OK}
+
+
+xgb_trials = Trials()
+xgb_best_params = fmin(xgb_objective, xgb_space, algo=tpe.suggest, max_evals=100, trials=xgb_trials)
+xgb_best_params['max_depth'] = xgb_best_params['max_depth'].astype(np.int64)
+xgb_best_params['min_child_weight'] = xgb_best_params['min_child_weight'].astype(np.int64)
+xgb_best_params['n_estimators'] = xgb_best_params['n_estimators'].astype(np.int64)
+print(xgb_best_params)
+
+xgb_model = space_to_xgb(xgb_best_params)
+xgb_model.fit(X_train, y_train)
+y_pred = xgb_model.predict(X_test)
+print(brier_score_loss(y_test, y_pred))
+
+y_pred = xgb_model.predict_proba(X_test)
+print(brier_score_loss(y_test, y_pred[:,1]))
+
+y_pred = []
+for _, game in X_test.iterrows():
+    rating1 = game['S1Elo']
+    rating2 = game['S2Elo']
+
+    y_pred.append(
+         1 / (1 + 10 ** ((rating2 - rating1) / 400))
+    )
+
+print(brier_score_loss(y_test, y_pred))
+print(brier_score_loss(y_test, np.array(y_pred) > 0.5))
+
+stacked_model = StackingClassifier([
+    ('elo', EloModelSklearn()),
+    ('xgb', xgb_model)
+])
+stacked_model.fit(X_train, y_train)
+y_pred = stacked_model.predict_proba(X_test)
+print(brier_score_loss(y_test, y_pred[:,1]))
