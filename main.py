@@ -26,6 +26,8 @@ detailed_results_mm = pd.read_csv('data/MNCAATourneyDetailedResults.csv')
 #   WStl - steals (accomplished by the winning team)
 #   WBlk - blocks (accomplished by the winning team)
 #   WPF - personal fouls committed (by the winning team)
+mm_seeds = pd.read_csv('data/MNCAATourneySeeds.csv')
+mm_seeds['Seed'] = mm_seeds['Seed'].apply(lambda x: float(x[1:3]))
 
 
 # Get all team IDs
@@ -143,10 +145,13 @@ for season in range(2003, 2024):
     simulate_games(elo_model, regular_season_games)
 
     tournament_games = compact_results_mm[compact_results_mm['Season'] == season]
+    tournament_seeds = mm_seeds[mm_seeds['Season'] == season]
 
     for _, game in tournament_games.iterrows():
         winner_stats = seasonal_averages[season][game['WTeamID']]
         loser_stats = seasonal_averages[season][game['LTeamID']]
+        winner_seed = tournament_seeds[tournament_seeds['TeamID'] == game['WTeamID']]['Seed'].item()
+        loser_seed = tournament_seeds[tournament_seeds['TeamID'] == game['LTeamID']]['Seed'].item()
         entry = {}
 
         # In each entry, season averages will be measured along with the elo of each team
