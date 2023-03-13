@@ -55,16 +55,13 @@ def elo_objective(space):
         results = compact_results_rs[compact_results_rs['Season'] == year]
         simulate_games(elo_model, results)
 
-        tourny_results = compact_results_mm[compact_results_mm['Season'] == year]
-        simulate_games(elo_model, tourny_results)
-
         elo_model.time_decay()
 
     loss = 0
     count = 0
 
     for year in range(2013, 2023):
-        # Same, but everything counts for Brier Score, and no training in the tournament
+        # Same, but tourney counts towards predictive score
 
         results = compact_results_rs[compact_results_rs['Season'] == year]
         simulate_games(elo_model, results)
@@ -87,6 +84,8 @@ elo_best_params = fmin(elo_objective, elo_space, algo=tpe.suggest, max_evals=100
 # elo_best_params = {'K': 10.067338276694205, 'K_decay': 0.06949750095380997,
 #                    'K_multiplier': 2.9002766872973336, 'end_of_season_decay': 0.051425562928002384,
 #                    'home_court_advantage': 51.533632254163315, 'margin_of_victor_multiplier': 0.362499069221264}
+
+print('ELO Minimization Complete')
 
 
 # Elo serves as a phase one pass
