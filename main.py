@@ -6,7 +6,7 @@ import hyperopt
 
 from hyperopt import hp, fmin, Trials, tpe
 from xgboost import XGBClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, ShuffleSplit
 from sklearn.ensemble import StackingClassifier
 from sklearn.metrics import brier_score_loss
 
@@ -218,11 +218,17 @@ def space_to_xgb(space):
 
 
 def xgb_objective(space):
-    model = space_to_xgb(space)
-    model.fit(X_train, y_train)
-    y_pred = model.predict_proba(X_test)
-    loss = brier_score_loss(y_test, y_pred[:,1])
-    return {'loss': loss, 'status': hyperopt.STATUS_OK}
+    loss = []
+    split = ShuffleSplit(n_splits=5, random_state=12)
+    for train, test in split.split(X, y):
+        model = space_to_xgb(space)
+        X_train, y_train = X.iloc[train], y.iloc[train]
+        X_test, y_test = X.iloc[test], y.iloc[test]
+        model.fit(X_train, y_train)
+        y_pred = model.predict_proba(X_test)
+        loss.append(brier_score_loss(y_test, y_pred[:,1]))
+
+    return {'loss': sum(loss)/len(loss), 'status': hyperopt.STATUS_OK}
 
 
 xgb_trials = Trials()
