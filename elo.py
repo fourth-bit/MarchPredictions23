@@ -90,5 +90,10 @@ def simulate_games(elo_model, games):
         elif game['WLoc'] == 'A':
             home_court = 0
 
-        elo_model.update_rankings(wid, lid, result=1, home_team=home_court,
+        result = 1
+        if game['NumOT'] != 0:
+            result = 0.5
+            mov = None
+
+        elo_model.update_rankings(wid, lid, result=result, home_team=home_court,
                                   margin_of_victory=mov, day_num=game['DayNum'])
