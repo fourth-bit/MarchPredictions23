@@ -1,6 +1,5 @@
 from model import *
 
-
 mens_model = Model(
     rs_compact='data/MRegularSeasonCompactResults.csv',
     mm_compact='data/MNCAATourneyCompactResults.csv',

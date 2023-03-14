@@ -52,7 +52,8 @@ class Model:
         }
 
         elo_trials = Trials()
-        self.elo_best_params = fmin(self.elo_objective, elo_space, algo=tpe.suggest, max_evals=max_evals, trials=elo_trials)
+        self.elo_best_params = fmin(self.elo_objective, elo_space, algo=tpe.suggest, max_evals=max_evals,
+                                    trials=elo_trials)
         return elo_trials
 
     def elo_objective(self, space):
@@ -87,7 +88,8 @@ class Model:
 
     def build_dataset(self):
         if self.elo_best_params is None:
-            raise ValueError('Must run fit_elo before running build_dataset. The elo model is required information for it')
+            raise ValueError(
+                'Must run fit_elo before running build_dataset. The elo model is required information for it')
 
         seasonal_averages = {}
         seasonal_weighted_averages = {}
@@ -191,13 +193,60 @@ class Model:
         self.X = self.dataset.drop('Outcome', axis=1)
         self.y = self.dataset['Outcome']
 
+        # For the 2023 Season, we need to build the final dataset
+        games2023 = self.compact_results_rs[self.compact_results_rs['Season'] == 2023]
+        simulate_games(elo_model, games2023)
+
+        teams2023 = np.unique(games2023[['WTeamID', 'LTeamID']].to_numpy().flatten())
+        teams2023.sort()
+        tournament_seeds = self.mm_seeds[self.mm_seeds['Season'] == 2023]
+
+        mmgames2023 = []
+
+        for idx, team1 in enumerate(teams2023):
+            for team2 in teams2023[idx + 1:]:
+                team1_stats = seasonal_averages[2023][team1]
+                team2_stats = seasonal_averages[2023][team2]
+                team1_seed = tournament_seeds[tournament_seeds['TeamID'] == team1]['Seed']
+                team2_seed = tournament_seeds[tournament_seeds['TeamID'] == team2]['Seed']
+
+                if len(team1_seed) == 0:
+                    team1_seed = 0
+                else:
+                    team1_seed = team1_seed.item()
+
+                if len(team2_seed) == 0:
+                    team2_seed = 0
+                else:
+                    team2_seed = team2_seed.item()
+
+                entry = {
+                    'ID': f'2023_{team1}_{team2}',
+                    'S1Elo': elo_model.get_elo(team1),
+                    'S2Elo': elo_model.get_elo(team2),
+                    'S1Seed': team1_seed,
+                    'S2Seed': team2_seed
+                }
+                for key in team1_stats:
+                    entry[f'S1{key}'] = team1_stats[key]
+                for key in team2_stats:
+                    entry[f'S2{key}'] = team2_stats[key]
+
+                entry['EloDiff'] = entry['S1Elo'] - entry['S2Elo']
+                entry['SeedDiff'] = entry['S1Seed'] - entry['S2Seed']
+
+                mmgames2023.append(entry)
+
+        self.mm_games_dataset = pd.DataFrame(mmgames2023)
+        # Reorder columns to be inline with the training order
+        self.mm_games_dataset = self.mm_games_dataset[[*self.X.columns, 'ID']]
 
     def space_to_xgb(self, space):
         return XGBClassifier(subsample=0.8, seed=6, eval_metric=brier_score_loss, **space)
 
     def xgb_objective(self, space):
         loss = self.cross_val_score(lambda: self.space_to_xgb(space))
-        return {'loss': sum(loss)/len(loss), 'status': hyperopt.STATUS_OK}
+        return {'loss': sum(loss) / len(loss), 'status': hyperopt.STATUS_OK}
 
     def cross_val_score(self, model_gen):
         loss = []
@@ -211,7 +260,7 @@ class Model:
             loss.append(brier_score_loss(y_test, y_pred[:, 1]))
         return loss
 
-    def train_models(self):
+    def train_models(self, *, max_evals=100):
         if self.X is None or self.y is None:
             raise ValueError('Must run build_dataset before train_models')
 
