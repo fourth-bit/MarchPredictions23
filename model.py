@@ -32,6 +32,7 @@ class Model:
         self.dataset = None
         self.X = None
         self.y = None
+        self.mm_games_dataset = None
 
         self.xgb_best_params = None
         self.xgb_model = None
@@ -136,7 +137,7 @@ class Model:
             simulate_games(elo_model, regular_season_games)
 
         # Now actually build the dataset
-        for season in range(2003, 2024):
+        for season in range(2003, 2023):
             regular_season_games = self.compact_results_rs[self.compact_results_rs['Season'] == season]
             simulate_games(elo_model, regular_season_games)
 
@@ -225,7 +226,16 @@ class Model:
         }
 
         xgb_trials = Trials()
-        xgb_best_params = fmin(self.xgb_objective, xgb_space, algo=tpe.suggest, max_evals=100, trials=xgb_trials)
+        # Sometimes there is an error with OpenMP (probably in xgboost)
+        # Perhaps setting a random state with rstate=np.random.default_rng(SEED) would fix it
+        xgb_best_params = fmin(
+            self.xgb_objective,
+            xgb_space,
+            algo=tpe.suggest,
+            max_evals=max_evals,
+            trials=xgb_trials,
+            rstate=np.random.default_rng(98123),
+        )
         xgb_best_params['max_depth'] = xgb_best_params['max_depth'].astype(np.int64)
         xgb_best_params['min_child_weight'] = xgb_best_params['min_child_weight'].astype(np.int64)
         xgb_best_params['n_estimators'] = xgb_best_params['n_estimators'].astype(np.int64)
@@ -236,7 +246,28 @@ class Model:
 
         stacked_model_gen = lambda: StackingClassifier([('elo', EloModelSklearn()), ('xgb', self.xgb_model)])
         loss = self.cross_val_score(stacked_model_gen)
-        print(loss, sum(loss)/len(loss))
+        print(loss, sum(loss) / len(loss))
 
         self.stacked_model = stacked_model_gen()
         self.stacked_model.fit(self.X, self.y)
+
+    def predict2023(self, *, only_elo=False):
+        if not only_elo:
+            predictions = self.stacked_model.predict_proba(self.mm_games_dataset.drop('ID', axis=1))[:, 1]
+        else:
+            elo_model = self.space_to_elo(self.elo_best_params)
+            for season in range(1993, 2024):
+                regular_season_games = self.compact_results_rs[self.compact_results_rs['Season'] == season]
+                simulate_games(elo_model, regular_season_games)
+
+            predictions = []
+            for _, game in self.mm_games_dataset.iterrows():
+                game_id = game['ID']
+                team1id = int(game_id[5:9])
+                team2id = int(game_id[10:14])
+                predictions.append(elo_model.predict_game(team1id, team2id))
+
+        predictions = pd.DataFrame(predictions, columns=['Pred'])
+
+        ids = self.mm_games_dataset['ID']
+        return ids.to_frame().join(predictions)
