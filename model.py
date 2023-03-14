@@ -115,16 +115,15 @@ class Model:
                     # Cut off the W
                     col = col[1:]
                     team_stats[col] = 0
-                    total = 0
+                    team_weighted_stats[col] = 0
 
-                    team_stats[col] += team_wins[f'W{col}'].sum()
-                    total += len(team_wins)
+                    col_data = np.concatenate([team_wins[f'W{col}'], team_losses[f'L{col}']])
 
-                    team_stats[col] += team_losses[f'L{col}'].sum()
-                    total += len(team_losses)
-
-                    if total != 0:
-                        team_stats[col] /= total
+                    if col_data.size > 0:
+                        team_stats[col] = col_data.mean()
+                        # basically a logistic curve
+                        distribution = 1 + 1/(1 + np.exp(-np.arange(col_data.size) + col_data.size/2))
+                        team_weighted_stats[col] = np.average(col_data, weights=distribution)
 
                 seasonal_averages[season][team] = team_stats
                 seasonal_weighted_averages[season][team] = team_weighted_stats
@@ -147,8 +146,10 @@ class Model:
             tournament_seeds = self.mm_seeds[self.mm_seeds['Season'] == season]
 
             for _, game in tournament_games.iterrows():
-                winner_stats = seasonal_averages[season][game['WTeamID']]
-                loser_stats = seasonal_averages[season][game['LTeamID']]
+                # winner_stats = seasonal_averages[season][game['WTeamID']]
+                # loser_stats = seasonal_averages[season][game['LTeamID']]
+                winner_stats = seasonal_weighted_averages[season][game['WTeamID']]
+                loser_stats = seasonal_weighted_averages[season][game['LTeamID']]
                 winner_seed = tournament_seeds[tournament_seeds['TeamID'] == game['WTeamID']]['Seed'].item()
                 loser_seed = tournament_seeds[tournament_seeds['TeamID'] == game['LTeamID']]['Seed'].item()
                 entry = {}
